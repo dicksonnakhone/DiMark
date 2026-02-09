@@ -10,3 +10,5 @@ source .venv/bin/activate
 pip install -e ./apps/analytics
 uvicorn apps.analytics.app.main:app --reload
 ```
+
+Strategist endpoints (plan + optimize) are available at `http://localhost:8000/docs`.

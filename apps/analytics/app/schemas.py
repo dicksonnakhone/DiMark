@@ -95,3 +95,83 @@ class ReportOut(BaseModel):
 class MeasureResponse(BaseModel):
     report_id: uuid.UUID
     report: dict[str, Any]
+
+
+class BriefCreate(BaseModel):
+    brief: dict[str, Any]
+
+
+class BriefOut(BaseModel):
+    id: uuid.UUID
+    campaign_id: uuid.UUID
+    brief_json: dict[str, Any]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PlanCreate(BaseModel):
+    brief: dict[str, Any]
+    total_budget: float = Field(ge=0)
+    currency: str = "USD"
+    start_date: date | None = None
+    end_date: date | None = None
+
+
+class PlanResponse(BaseModel):
+    campaign_plan_id: uuid.UUID
+    budget_plan_id: uuid.UUID
+    allocations: dict[str, float]
+    plan: dict[str, Any]
+
+
+class OptimizeRequest(BaseModel):
+    report_id: uuid.UUID
+    budget_plan_id: uuid.UUID
+
+
+class DecisionResponse(BaseModel):
+    decision_id: uuid.UUID
+    decision_type: str
+    from_allocations: dict[str, float]
+    to_allocations: dict[str, float]
+    rationale: dict[str, Any]
+
+
+class CampaignPlanOut(BaseModel):
+    id: uuid.UUID
+    campaign_id: uuid.UUID
+    budget_plan_id: uuid.UUID
+    plan_json: dict[str, Any]
+    created_at: datetime
+    allocations: dict[str, float] | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class DecisionMeta(BaseModel):
+    id: uuid.UUID
+    campaign_id: uuid.UUID
+    report_id: uuid.UUID | None = None
+    decision_type: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class DecisionOut(BaseModel):
+    id: uuid.UUID
+    campaign_id: uuid.UUID
+    report_id: uuid.UUID | None = None
+    budget_plan_id: uuid.UUID
+    decision_type: str
+    from_allocations_json: dict[str, Any]
+    to_allocations_json: dict[str, Any]
+    rationale_json: dict[str, Any]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
