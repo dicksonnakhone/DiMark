@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-marketing}
+      POSTGRES_USER: ${POSTGRES_USER:-marketing}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-marketing}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  analytics:
+    build:
+      context: ../apps/analytics
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://marketing:marketing@postgres:5432/marketing}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
