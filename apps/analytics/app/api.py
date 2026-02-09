@@ -31,9 +31,14 @@ from app.schemas import (
     PlanResponse,
     ReportMeta,
     ReportOut,
+    RunCycleRequest,
+    RunCycleResponse,
+    RunCyclesRequest,
+    RunCyclesResponse,
     SnapshotCreate,
     SnapshotOut,
 )
+from app.services.cycle_runner import run_cycle, run_cycles
 from app.services.measurement import compute_report
 from app.services.strategist import create_plan_from_brief, optimize_from_report
 
@@ -267,3 +272,56 @@ def get_decision(decision_id: uuid.UUID, db: Session = Depends(get_db)):
     if decision is None:
         raise HTTPException(status_code=404, detail="Decision not found")
     return decision
+
+
+@router.post(
+    "/campaigns/{campaign_id}/run-cycle",
+    response_model=RunCycleResponse,
+    tags=["execution"],
+)
+def run_cycle_endpoint(
+    campaign_id: uuid.UUID, payload: RunCycleRequest, db: Session = Depends(get_db)
+):
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    try:
+        result = run_cycle(
+            db=db,
+            campaign_id=campaign_id,
+            budget_plan_id=payload.budget_plan_id,
+            window_start=payload.window_start,
+            window_end=payload.window_end,
+            seed=payload.seed,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return result
+
+
+@router.post(
+    "/campaigns/{campaign_id}/run-cycles",
+    response_model=RunCyclesResponse,
+    tags=["execution"],
+)
+def run_cycles_endpoint(
+    campaign_id: uuid.UUID, payload: RunCyclesRequest, db: Session = Depends(get_db)
+):
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    try:
+        result = run_cycles(
+            db=db,
+            campaign_id=campaign_id,
+            budget_plan_id=payload.budget_plan_id,
+            n=payload.n,
+            start_date=payload.start_date,
+            window_days=payload.window_days,
+            seed=payload.seed,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return result

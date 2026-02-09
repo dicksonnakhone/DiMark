@@ -11,4 +11,4 @@ pip install -e ./apps/analytics
 uvicorn apps.analytics.app.main:app --reload
 ```
 
-Strategist endpoints (plan + optimize) are available at `http://localhost:8000/docs`.
+Strategist and simulation endpoints are available at `http://localhost:8000/docs`.

@@ -175,3 +175,32 @@ class DecisionOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class RunCycleRequest(BaseModel):
+    budget_plan_id: uuid.UUID
+    window_start: date
+    window_end: date
+    seed: int
+
+
+class RunCycleResponse(BaseModel):
+    snapshots: list[dict[str, Any]]
+    report_id: uuid.UUID
+    decision_id: uuid.UUID
+    decision_type: str
+    allocations_after: dict[str, float]
+    metrics_summary: dict[str, Any]
+
+
+class RunCyclesRequest(BaseModel):
+    budget_plan_id: uuid.UUID
+    n: int = Field(ge=1, le=52)
+    start_date: date
+    window_days: int = Field(ge=1, le=31)
+    seed: int
+
+
+class RunCyclesResponse(BaseModel):
+    cycles: list[RunCycleResponse]
+    final_allocations: dict[str, float]
