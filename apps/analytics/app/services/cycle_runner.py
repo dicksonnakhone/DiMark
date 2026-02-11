@@ -16,6 +16,7 @@ from app.models import (
     ChannelSnapshot,
 )
 from app.services.execution import SimulatedExecutionAgent
+from app.services.experimentation import run_experiment_window
 from app.services.measurement import compute_report
 from app.services.strategist import optimize_from_report
 
@@ -77,17 +78,37 @@ def run_cycle(
     )
     allocations = {row.channel: _to_decimal(row.allocated_budget) for row in allocations_rows}
 
-    agent = SimulatedExecutionAgent()
-    snapshots = agent.run_window(
-        campaign=campaign,
-        plan_json=plan.plan_json,
-        brief_json=brief.brief_json if brief else None,
-        budget_plan=budget_plan,
-        allocations=allocations,
+    experiment_payload = run_experiment_window(
+        db=db,
+        campaign_id=campaign_id,
+        budget_plan_id=budget_plan_id,
         window_start=window_start,
         window_end=window_end,
         seed=seed,
+        plan_json=plan.plan_json,
+        brief_json=brief.brief_json if brief else None,
     )
+    if experiment_payload is not None:
+        snapshots = experiment_payload["aggregated_snapshots"]
+        experiment_info = {
+            "experiment_id": experiment_payload["experiment"].id,
+            "status": experiment_payload["experiment"].status,
+            "result_id": experiment_payload["result"].id,
+            "analysis": experiment_payload["analysis"],
+        }
+    else:
+        agent = SimulatedExecutionAgent()
+        snapshots = agent.run_window(
+            campaign=campaign,
+            plan_json=plan.plan_json,
+            brief_json=brief.brief_json if brief else None,
+            budget_plan=budget_plan,
+            allocations=allocations,
+            window_start=window_start,
+            window_end=window_end,
+            seed=seed,
+        )
+        experiment_info = None
 
     for snapshot in snapshots:
         db.add(
@@ -133,6 +154,7 @@ def run_cycle(
         "decision_type": decision_result.decision.decision_type,
         "allocations_after": allocations_after,
         "metrics_summary": metrics_summary,
+        "experiment": experiment_info,
     }
 
 

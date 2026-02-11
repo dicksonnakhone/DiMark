@@ -13,6 +13,9 @@ from app.models import (
     CampaignPlan,
     ChannelBudget,
     ChannelSnapshot,
+    Experiment,
+    ExperimentResult,
+    ExperimentVariant,
     MeasurementReport,
 )
 from app.schemas import (
@@ -24,6 +27,14 @@ from app.schemas import (
     DecisionMeta,
     DecisionOut,
     DecisionResponse,
+    ExperimentCreate,
+    ExperimentListItem,
+    ExperimentOut,
+    ExperimentResultOut,
+    ExperimentRunWindowRequest,
+    ExperimentStartResponse,
+    ExperimentStopRequest,
+    ExperimentVariantOut,
     MeasureRequest,
     MeasureResponse,
     OptimizeRequest,
@@ -39,6 +50,12 @@ from app.schemas import (
     SnapshotOut,
 )
 from app.services.cycle_runner import run_cycle, run_cycles
+from app.services.experimentation import (
+    create_experiment as create_experiment_service,
+    run_experiment_window,
+    start_experiment as start_experiment_service,
+    stop_experiment as stop_experiment_service,
+)
 from app.services.measurement import compute_report
 from app.services.strategist import create_plan_from_brief, optimize_from_report
 
@@ -325,3 +342,206 @@ def run_cycles_endpoint(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return result
+
+
+@router.post(
+    "/campaigns/{campaign_id}/experiments",
+    response_model=ExperimentOut,
+    tags=["experiments"],
+)
+def create_experiment_endpoint(
+    campaign_id: uuid.UUID, payload: ExperimentCreate, db: Session = Depends(get_db)
+):
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    try:
+        experiment = create_experiment_service(
+            db=db,
+            campaign_id=campaign_id,
+            experiment_type=payload.experiment_type,
+            primary_metric=payload.primary_metric,
+            variants=[variant.model_dump() for variant in payload.variants],
+            hypothesis=payload.hypothesis,
+            min_sample_conversions=payload.min_sample_conversions,
+            confidence=Decimal(str(payload.confidence)),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    variants = (
+        db.execute(
+            select(ExperimentVariant).where(ExperimentVariant.experiment_id == experiment.id)
+        )
+        .scalars()
+        .all()
+    )
+    return ExperimentOut(
+        id=experiment.id,
+        campaign_id=experiment.campaign_id,
+        experiment_type=experiment.experiment_type,
+        status=experiment.status,
+        hypothesis=experiment.hypothesis,
+        primary_metric=experiment.primary_metric,
+        min_sample_conversions=experiment.min_sample_conversions,
+        min_sample_clicks=experiment.min_sample_clicks,
+        confidence=float(experiment.confidence),
+        created_at=experiment.created_at,
+        variants=[ExperimentVariantOut.model_validate(v) for v in variants],
+    )
+
+
+@router.post(
+    "/experiments/{experiment_id}/start",
+    response_model=ExperimentStartResponse,
+    tags=["experiments"],
+)
+def start_experiment_endpoint(experiment_id: uuid.UUID, db: Session = Depends(get_db)):
+    try:
+        experiment = start_experiment_service(db=db, experiment_id=experiment_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return ExperimentStartResponse(id=experiment.id, status=experiment.status)
+
+
+@router.post(
+    "/experiments/{experiment_id}/stop",
+    response_model=ExperimentStartResponse,
+    tags=["experiments"],
+)
+def stop_experiment_endpoint(
+    experiment_id: uuid.UUID,
+    payload: ExperimentStopRequest | None = None,
+    db: Session = Depends(get_db),
+):
+    try:
+        experiment = stop_experiment_service(
+            db=db, experiment_id=experiment_id, reason=payload.reason if payload else None
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return ExperimentStartResponse(id=experiment.id, status=experiment.status)
+
+
+@router.get(
+    "/campaigns/{campaign_id}/experiments",
+    response_model=list[ExperimentListItem],
+    tags=["experiments"],
+)
+def list_experiments(campaign_id: uuid.UUID, db: Session = Depends(get_db)):
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    experiments = (
+        db.execute(
+            select(Experiment)
+            .where(Experiment.campaign_id == campaign_id)
+            .order_by(Experiment.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+    return experiments
+
+
+@router.get(
+    "/experiments/{experiment_id}",
+    response_model=ExperimentOut,
+    tags=["experiments"],
+)
+def get_experiment(experiment_id: uuid.UUID, db: Session = Depends(get_db)):
+    experiment = db.get(Experiment, experiment_id)
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+    variants = (
+        db.execute(
+            select(ExperimentVariant).where(ExperimentVariant.experiment_id == experiment.id)
+        )
+        .scalars()
+        .all()
+    )
+    latest_result = (
+        db.execute(
+            select(ExperimentResult)
+            .where(ExperimentResult.experiment_id == experiment.id)
+            .order_by(ExperimentResult.window_start.desc())
+        )
+        .scalars()
+        .first()
+    )
+
+    return ExperimentOut(
+        id=experiment.id,
+        campaign_id=experiment.campaign_id,
+        experiment_type=experiment.experiment_type,
+        status=experiment.status,
+        hypothesis=experiment.hypothesis,
+        primary_metric=experiment.primary_metric,
+        min_sample_conversions=experiment.min_sample_conversions,
+        min_sample_clicks=experiment.min_sample_clicks,
+        confidence=float(experiment.confidence),
+        created_at=experiment.created_at,
+        variants=[ExperimentVariantOut.model_validate(v) for v in variants],
+        latest_analysis=latest_result.analysis_json if latest_result else None,
+    )
+
+
+@router.get(
+    "/experiments/{experiment_id}/results",
+    response_model=list[ExperimentResultOut],
+    tags=["experiments"],
+)
+def list_experiment_results(experiment_id: uuid.UUID, db: Session = Depends(get_db)):
+    experiment = db.get(Experiment, experiment_id)
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+    results = (
+        db.execute(
+            select(ExperimentResult)
+            .where(ExperimentResult.experiment_id == experiment_id)
+            .order_by(ExperimentResult.window_start.asc())
+        )
+        .scalars()
+        .all()
+    )
+    return results
+
+
+@router.post(
+    "/experiments/{experiment_id}/run-window",
+    response_model=dict,
+    tags=["experiments"],
+)
+def run_experiment_window_endpoint(
+    experiment_id: uuid.UUID,
+    payload: ExperimentRunWindowRequest,
+    db: Session = Depends(get_db),
+):
+    experiment = db.get(Experiment, experiment_id)
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+    result = run_experiment_window(
+        db=db,
+        campaign_id=experiment.campaign_id,
+        budget_plan_id=payload.budget_plan_id,
+        window_start=payload.window_start,
+        window_end=payload.window_end,
+        seed=payload.seed,
+    )
+    if result is None:
+        raise HTTPException(status_code=409, detail="No running experiment")
+
+    return {
+        "experiment_id": experiment.id,
+        "result_id": result["result"].id,
+        "analysis": result["analysis"],
+    }

@@ -18,5 +18,7 @@ class ExecutionAgent(ABC):
         window_start: date,
         window_end: date,
         seed: int,
+        variant_name: str | None = None,
+        sim_overrides: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         raise NotImplementedError

@@ -48,6 +48,8 @@ class SimulatedExecutionAgent(ExecutionAgent):
         window_start: date,
         window_end: date,
         seed: int,
+        variant_name: str | None = None,
+        sim_overrides: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         rng = random.Random(seed)
         objective = getattr(campaign, "objective", "paid_conversions")
@@ -82,8 +84,16 @@ class SimulatedExecutionAgent(ExecutionAgent):
                 spend = allocated
 
             spend = _clamp(spend, Decimal("0"))
-            effective_ctr = _effective_rate(params.base_ctr, spend, params)
-            effective_cvr = _effective_rate(params.base_cvr, spend, params)
+            overrides = (sim_overrides or {}).get(channel, {})
+            ctr_mult = _to_decimal(overrides.get("ctr_mult", 1))
+            cvr_mult = _to_decimal(overrides.get("cvr_mult", 1))
+            aov_mult = _to_decimal(overrides.get("aov_mult", 1))
+
+            base_ctr = params.base_ctr * ctr_mult
+            base_cvr = params.base_cvr * cvr_mult
+
+            effective_ctr = _effective_rate(base_ctr, spend, params)
+            effective_cvr = _effective_rate(base_cvr, spend, params)
 
             effective_ctr = _apply_noise(rng, effective_ctr, params.noise_sigma)
             effective_cvr = _apply_noise(rng, effective_cvr, params.noise_sigma)
@@ -104,7 +114,7 @@ class SimulatedExecutionAgent(ExecutionAgent):
                     conversions = Decimal("0")
 
             if objective == "revenue" or (brief_json and brief_json.get("revenue_tracking")):
-                aov = _apply_noise(rng, params.base_aov, Decimal("0.05"))
+                aov = _apply_noise(rng, params.base_aov * aov_mult, Decimal("0.05"))
                 revenue = conversions * aov
             else:
                 revenue = Decimal("0")

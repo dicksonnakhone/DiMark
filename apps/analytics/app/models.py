@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     Text,
     UniqueConstraint,
@@ -39,6 +40,7 @@ class Campaign(Base):
     allocation_decisions: Mapped[list["AllocationDecision"]] = relationship(
         back_populates="campaign"
     )
+    experiments: Mapped[list["Experiment"]] = relationship(back_populates="campaign")
 
 
 class ChannelSnapshot(Base):
@@ -179,3 +181,64 @@ class AllocationDecision(Base):
     campaign: Mapped[Campaign] = relationship(back_populates="allocation_decisions")
     report: Mapped["MeasurementReport | None"] = relationship()
     budget_plan: Mapped[BudgetPlan] = relationship()
+
+
+class Experiment(Base):
+    __tablename__ = "experiments"
+    __table_args__ = (Index("ix_experiments_campaign_status", "campaign_id", "status"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    experiment_type: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    hypothesis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    primary_metric: Mapped[str] = mapped_column(Text, nullable=False)
+    min_sample_conversions: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
+    min_sample_clicks: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    confidence: Mapped[float] = mapped_column(Numeric, nullable=False, default=0.95)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    campaign: Mapped[Campaign] = relationship(back_populates="experiments")
+    variants: Mapped[list["ExperimentVariant"]] = relationship(
+        back_populates="experiment", cascade="all, delete-orphan"
+    )
+    results: Mapped[list["ExperimentResult"]] = relationship(
+        back_populates="experiment", cascade="all, delete-orphan"
+    )
+
+
+class ExperimentVariant(Base):
+    __tablename__ = "experiment_variants"
+    __table_args__ = (UniqueConstraint("experiment_id", "name"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    experiment_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("experiments.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    traffic_share: Mapped[float] = mapped_column(Numeric, nullable=False)
+    variant_json: Mapped[dict] = mapped_column(JSONB().with_variant(JSON, "sqlite"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    experiment: Mapped[Experiment] = relationship(back_populates="variants")
+
+
+class ExperimentResult(Base):
+    __tablename__ = "experiment_results"
+    __table_args__ = (Index("ix_experiment_results_experiment_window", "experiment_id", "window_start"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    experiment_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("experiments.id", ondelete="CASCADE"), nullable=False
+    )
+    window_start: Mapped[date] = mapped_column(Date, nullable=False)
+    window_end: Mapped[date] = mapped_column(Date, nullable=False)
+    results_json: Mapped[dict] = mapped_column(JSONB().with_variant(JSON, "sqlite"), nullable=False)
+    analysis_json: Mapped[dict | None] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    experiment: Mapped[Experiment] = relationship(back_populates="results")

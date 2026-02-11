@@ -184,6 +184,13 @@ class RunCycleRequest(BaseModel):
     seed: int
 
 
+class ExperimentCycleInfo(BaseModel):
+    experiment_id: uuid.UUID
+    status: str
+    result_id: uuid.UUID | None = None
+    analysis: dict[str, Any] | None = None
+
+
 class RunCycleResponse(BaseModel):
     snapshots: list[dict[str, Any]]
     report_id: uuid.UUID
@@ -191,6 +198,7 @@ class RunCycleResponse(BaseModel):
     decision_type: str
     allocations_after: dict[str, float]
     metrics_summary: dict[str, Any]
+    experiment: ExperimentCycleInfo | None = None
 
 
 class RunCyclesRequest(BaseModel):
@@ -204,3 +212,87 @@ class RunCyclesRequest(BaseModel):
 class RunCyclesResponse(BaseModel):
     cycles: list[RunCycleResponse]
     final_allocations: dict[str, float]
+
+
+class ExperimentVariantCreate(BaseModel):
+    name: str
+    traffic_share: float = Field(ge=0, le=1)
+    variant: dict[str, Any]
+
+
+class ExperimentCreate(BaseModel):
+    experiment_type: str
+    primary_metric: str
+    hypothesis: str | None = None
+    min_sample_conversions: int = Field(default=20, ge=1)
+    confidence: float = Field(default=0.95, gt=0, lt=1)
+    variants: list[ExperimentVariantCreate]
+
+
+class ExperimentVariantOut(BaseModel):
+    id: uuid.UUID
+    experiment_id: uuid.UUID
+    name: str
+    traffic_share: float
+    variant_json: dict[str, Any]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ExperimentOut(BaseModel):
+    id: uuid.UUID
+    campaign_id: uuid.UUID
+    experiment_type: str
+    status: str
+    hypothesis: str | None = None
+    primary_metric: str
+    min_sample_conversions: int
+    min_sample_clicks: int | None = None
+    confidence: float
+    created_at: datetime
+    variants: list[ExperimentVariantOut] | None = None
+    latest_analysis: dict[str, Any] | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class ExperimentListItem(BaseModel):
+    id: uuid.UUID
+    campaign_id: uuid.UUID
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ExperimentResultOut(BaseModel):
+    id: uuid.UUID
+    experiment_id: uuid.UUID
+    window_start: date
+    window_end: date
+    results_json: dict[str, Any]
+    analysis_json: dict[str, Any] | None = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ExperimentStartResponse(BaseModel):
+    id: uuid.UUID
+    status: str
+
+
+class ExperimentStopRequest(BaseModel):
+    reason: str | None = None
+
+
+class ExperimentRunWindowRequest(BaseModel):
+    budget_plan_id: uuid.UUID
+    window_start: date
+    window_end: date
+    seed: int

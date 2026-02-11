@@ -1,6 +1,6 @@
 # Analytics Service
 
-Measurement Agent (Attribution-lite v1) built with FastAPI.
+Measurement, strategist, simulation, and experimentation agents built with FastAPI.
 
 Run locally from repo root:
 
@@ -11,4 +11,4 @@ pip install -e ./apps/analytics
 uvicorn apps.analytics.app.main:app --reload
 ```
 
-Strategist and simulation endpoints are available at `http://localhost:8000/docs`.
+Strategist, simulation, and experimentation endpoints are available at `http://localhost:8000/docs`.
