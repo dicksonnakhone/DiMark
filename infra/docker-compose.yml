@@ -21,6 +21,8 @@ services:
       dockerfile: Dockerfile
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://marketing:marketing@postgres:5432/marketing}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
     ports:
       - "8000:8000"
     depends_on:
