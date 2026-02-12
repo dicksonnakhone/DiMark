@@ -11,5 +11,8 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = "marketing"
     DATABASE_URL: str = "postgresql+psycopg://marketing:marketing@localhost:5432/marketing"
 
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-20250514"
+
 
 settings = Settings()
