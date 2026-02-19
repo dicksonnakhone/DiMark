@@ -42,6 +42,7 @@ class Campaign(Base):
         back_populates="campaign"
     )
     experiments: Mapped[list["Experiment"]] = relationship(back_populates="campaign")
+    executions: Mapped[list["Execution"]] = relationship(back_populates="campaign")
 
 
 class ChannelSnapshot(Base):
@@ -372,3 +373,88 @@ class ToolExecution(Base):
 
     session: Mapped[AgentSession] = relationship(back_populates="tool_executions")
     tool: Mapped[Tool] = relationship(back_populates="executions")
+
+
+# ---------------------------------------------------------------------------
+# Execution / Platform integration models
+# ---------------------------------------------------------------------------
+
+
+class Execution(Base):
+    __tablename__ = "executions"
+    __table_args__ = (
+        Index("ix_executions_campaign_platform", "campaign_id", "platform"),
+        UniqueConstraint("idempotency_key"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    platform: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    execution_plan: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=False
+    )
+    external_campaign_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    external_ids: Mapped[dict | None] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=True
+    )
+    links: Mapped[dict | None] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    campaign: Mapped[Campaign] = relationship(back_populates="executions")
+    actions: Mapped[list["ExecutionAction"]] = relationship(
+        back_populates="execution", cascade="all, delete-orphan"
+    )
+
+
+class ExecutionAction(Base):
+    __tablename__ = "execution_actions"
+    __table_args__ = (Index("ix_execution_actions_execution", "execution_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    execution_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("executions.id", ondelete="CASCADE"), nullable=False
+    )
+    action_type: Mapped[str] = mapped_column(Text, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
+    request_json: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=False
+    )
+    response_json: Mapped[dict | None] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    execution: Mapped[Execution] = relationship(back_populates="actions")
+
+
+class PlatformConnector(Base):
+    __tablename__ = "platform_connectors"
+    __table_args__ = (UniqueConstraint("platform", "account_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    platform: Mapped[str] = mapped_column(Text, nullable=False)
+    account_id: Mapped[str] = mapped_column(Text, nullable=False)
+    account_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    access_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refresh_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
+    config_json: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

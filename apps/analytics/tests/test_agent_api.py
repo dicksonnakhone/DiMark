@@ -46,13 +46,17 @@ async def test_list_tools(async_client: AsyncClient):
     assert response.status_code == 200
     tools = response.json()
     assert isinstance(tools, list)
-    assert len(tools) >= 7
+    assert len(tools) >= 11
     names = {t["name"] for t in tools}
     assert "search_web" in names
     assert "query_past_campaigns" in names
     assert "create_campaign" in names
     assert "post_to_chat" in names
     assert "request_user_approval" in names
+    assert "execute_campaign_on_platform" in names
+    assert "pause_platform_campaign" in names
+    assert "resume_platform_campaign" in names
+    assert "update_platform_budget" in names
 
 
 @pytest.mark.asyncio

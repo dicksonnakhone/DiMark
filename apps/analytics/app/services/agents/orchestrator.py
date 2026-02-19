@@ -32,6 +32,10 @@ class Orchestrator:
     def _get_agent(self, agent_type: str) -> BaseAgent:
         if agent_type == "planner":
             return PlannerAgent(llm=self.llm, registry=self.registry)
+        if agent_type == "executor":
+            from app.services.agents.executor_agent import ExecutorAgent
+
+            return ExecutorAgent(llm=self.llm, registry=self.registry)
         raise ValueError(f"Unknown agent type: {agent_type}")
 
     async def start_session(
