@@ -2,6 +2,7 @@ import axios from "axios";
 import type {
   AgentSession,
   ApproveDecisionRequest,
+  ContinueSessionRequest,
   StartSessionRequest,
   ToolInfo,
 } from "../types";
@@ -27,6 +28,17 @@ export async function approveDecision(
 ): Promise<AgentSession> {
   const { data } = await client.post<AgentSession>(
     `/sessions/${sessionId}/decisions/${decisionId}/approve`,
+    payload,
+  );
+  return data;
+}
+
+export async function continueSession(
+  sessionId: string,
+  payload: ContinueSessionRequest,
+): Promise<AgentSession> {
+  const { data } = await client.post<AgentSession>(
+    `/sessions/${sessionId}/continue`,
     payload,
   );
   return data;

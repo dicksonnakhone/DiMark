@@ -32,6 +32,10 @@ class Orchestrator:
     def _get_agent(self, agent_type: str) -> BaseAgent:
         if agent_type == "planner":
             return PlannerAgent(llm=self.llm, registry=self.registry)
+        if agent_type == "executor":
+            from app.services.agents.executor_agent import ExecutorAgent
+
+            return ExecutorAgent(llm=self.llm, registry=self.registry)
         raise ValueError(f"Unknown agent type: {agent_type}")
 
     async def start_session(
@@ -93,6 +97,32 @@ class Orchestrator:
             db=db,
             decision_id=decision_id,
             approved=approved,
+        )
+
+        await db.commit()
+        return session
+
+    async def continue_session(
+        self,
+        *,
+        session_id: uuid.UUID,
+        message: str,
+        db: AsyncSession,
+    ) -> AgentSession:
+        """Continue an existing session with a new user message."""
+        session = await db.get(AgentSession, session_id)
+        if session is None:
+            raise ValueError("Session not found")
+        if session.status not in ("completed", "failed"):
+            raise ValueError(
+                f"Can only continue completed or failed sessions (current status: {session.status})"
+            )
+
+        agent = self._get_agent(session.agent_type)
+        session = await agent.continue_session(
+            session=session,
+            db=db,
+            user_message=message,
         )
 
         await db.commit()

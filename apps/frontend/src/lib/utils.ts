@@ -17,7 +17,9 @@ function inferMessageType(d: AgentDecision): MessageType {
  * Build a user-readable text from a decision.
  */
 function buildText(d: AgentDecision): string {
-  if (d.reasoning) return d.reasoning;
+  if (typeof d.reasoning === "string" && d.reasoning.length > 0) {
+    return d.reasoning;
+  }
   if (d.phase === "act" && d.tool_name) {
     if (d.tool_output) {
       const out = d.tool_output as Record<string, unknown>;
@@ -49,7 +51,10 @@ export function decisionsToMessages(decisions: AgentDecision[]): ChatMessage[] {
       toolOutput: d.tool_output,
       requiresApproval: d.requires_approval,
       approvalStatus: d.approval_status,
-      timestamp: d.created_at,
+      timestamp:
+        typeof d.created_at === "string"
+          ? d.created_at
+          : new Date().toISOString(),
     }));
 }
 
