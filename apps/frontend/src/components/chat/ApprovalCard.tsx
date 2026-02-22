@@ -10,6 +10,14 @@ interface ApprovalCardProps {
   sessionId: string;
 }
 
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return "[unserializable payload]";
+  }
+}
+
 export function ApprovalCard({ message, sessionId }: ApprovalCardProps) {
   const { approve, reject, isPending } = useApproval(sessionId);
 
@@ -21,7 +29,11 @@ export function ApprovalCard({ message, sessionId }: ApprovalCardProps) {
     (toolOutput["action"] as string) ??
     message.toolName ??
     "Pending action";
-  const details = toolOutput["details"] as Record<string, unknown> | undefined;
+  const details = toolOutput["details"];
+  const hasDetails =
+    typeof details === "object" &&
+    details !== null &&
+    Object.keys(details).length > 0;
 
   return (
     <Card
@@ -39,9 +51,9 @@ export function ApprovalCard({ message, sessionId }: ApprovalCardProps) {
       </p>
       <p className="mb-2 text-sm text-gray-600">{action}</p>
 
-      {details && Object.keys(details).length > 0 && (
+      {hasDetails && (
         <pre className="mb-3 max-h-40 overflow-auto rounded bg-gray-100 p-2 text-xs text-gray-700">
-          {JSON.stringify(details, null, 2)}
+          {safeJson(details)}
         </pre>
       )}
 

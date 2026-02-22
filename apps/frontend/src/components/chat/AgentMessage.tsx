@@ -61,13 +61,28 @@ interface AgentMessageProps {
   sessionId: string;
 }
 
+function formatTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "just now";
+  return formatDistanceToNow(date, { addSuffix: true });
+}
+
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return "[unserializable payload]";
+  }
+}
+
 export function AgentMessage({ message, sessionId }: AgentMessageProps) {
   const config = agentConfig[message.agentName] ?? defaultAgent;
   const Icon = config.icon;
 
-  const isThought = message.text.startsWith("\u{1F4AD}"); // starts with 💭
+  const text = typeof message.text === "string" ? message.text : String(message.text);
+  const isThought = text.startsWith("\u{1F4AD}"); // starts with 💭
   const isToolUse =
-    message.toolName !== null && message.text.startsWith("Used tool");
+    message.toolName !== null && text.startsWith("Used tool");
 
   // Use type-specific styles if they exist, otherwise fall back to agent
   const typeOverride = typeStyles[message.type];
@@ -93,9 +108,7 @@ export function AgentMessage({ message, sessionId }: AgentMessageProps) {
             {message.agentName}
           </span>
           <span className="text-xs text-gray-400">
-            {formatDistanceToNow(new Date(message.timestamp), {
-              addSuffix: true,
-            })}
+            {formatTimestamp(message.timestamp)}
           </span>
         </div>
 
@@ -108,7 +121,7 @@ export function AgentMessage({ message, sessionId }: AgentMessageProps) {
             isToolUse && "font-mono text-xs",
           )}
         >
-          <p className="whitespace-pre-wrap">{message.text}</p>
+          <p className="whitespace-pre-wrap">{text}</p>
 
           {/* Collapsed tool I/O */}
           {isToolUse && message.toolOutput && (
@@ -117,7 +130,7 @@ export function AgentMessage({ message, sessionId }: AgentMessageProps) {
                 Show tool output
               </summary>
               <pre className="mt-1 max-h-40 overflow-auto rounded bg-white/60 p-2 text-xs">
-                {JSON.stringify(message.toolOutput, null, 2)}
+                {safeJson(message.toolOutput)}
               </pre>
             </details>
           )}

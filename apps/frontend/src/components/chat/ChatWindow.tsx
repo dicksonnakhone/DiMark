@@ -1,7 +1,8 @@
 import { AlertCircle, Plus, Sparkles } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAgentSession } from "../../hooks/useAgentSession";
 import { decisionsToMessages } from "../../lib/utils";
+import type { ChatMessage } from "../../types";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { AgentThinking } from "./AgentThinking";
@@ -18,6 +19,43 @@ const EXAMPLES = [
   "Get 50 sign-ups for my AI writing tool in 2 weeks",
 ];
 
+const USER_MESSAGES_STORAGE_PREFIX = "chat_user_messages";
+
+function getUserMessageStorageKey(sessionId: string): string {
+  return `${USER_MESSAGES_STORAGE_PREFIX}:${sessionId}`;
+}
+
+function buildUserMessage(text: string): ChatMessage {
+  return {
+    id: `user-${crypto.randomUUID()}`,
+    sender: "user",
+    agentName: "You",
+    text,
+    type: "info",
+    toolName: null,
+    toolInput: null,
+    toolOutput: null,
+    requiresApproval: false,
+    approvalStatus: null,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+function parseTimestamp(value: string): number {
+  const ts = Date.parse(value);
+  return Number.isNaN(ts) ? Number.MAX_SAFE_INTEGER : ts;
+}
+
+function getFinalAnswerText(value: unknown): string {
+  if (typeof value === "string" && value.trim().length > 0) return value;
+  if (value == null) return "The agent has finished working on your goal.";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "The agent has finished working on your goal.";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -27,13 +65,38 @@ export function ChatWindow() {
     sessionId,
     session,
     isStarting,
+    isContinuing,
     isSessionLoading,
+    sessionError,
     startError,
+    continueError,
     start,
+    continueConversation,
     clearSession,
   } = useAgentSession();
 
   const [goalDraft, setGoalDraft] = useState("");
+  const [userMessages, setUserMessages] = useState<ChatMessage[]>([]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setUserMessages([]);
+      return;
+    }
+
+    const raw = localStorage.getItem(getUserMessageStorageKey(sessionId));
+    if (!raw) {
+      setUserMessages([]);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as ChatMessage[];
+      setUserMessages(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setUserMessages([]);
+    }
+  }, [sessionId]);
 
   const handleStart = useCallback(() => {
     const trimmed = goalDraft.trim();
@@ -41,6 +104,21 @@ export function ChatWindow() {
     start(trimmed);
     setGoalDraft("");
   }, [goalDraft, start]);
+
+  const agentMessages = session ? decisionsToMessages(session.decisions) : [];
+  const messages = useMemo(() => {
+    return [...userMessages, ...agentMessages].sort((a, b) => {
+      const delta = parseTimestamp(a.timestamp) - parseTimestamp(b.timestamp);
+      if (delta !== 0) return delta;
+      if (a.sender === b.sender) return 0;
+      return a.sender === "user" ? -1 : 1;
+    });
+  }, [agentMessages, userMessages]);
+  const isActive =
+    session?.status === "running" || session?.status === "pending";
+  const canContinue =
+    session?.status === "completed" || session?.status === "failed";
+  const isProcessing = isActive || isContinuing;
 
   // ---------- Landing screen (no active session) ----------
 
@@ -123,9 +201,19 @@ export function ChatWindow() {
 
   // ---------- Chat interface ----------
 
-  const messages = session ? decisionsToMessages(session.decisions) : [];
-  const isActive =
-    session?.status === "running" || session?.status === "pending";
+  const handleContinue = (message: string) => {
+    const trimmed = message.trim();
+    if (!trimmed || !sessionId) return;
+
+    const userMessage = buildUserMessage(trimmed);
+    setUserMessages((prev) => {
+      const next = [...prev, userMessage];
+      localStorage.setItem(getUserMessageStorageKey(sessionId), JSON.stringify(next));
+      return next;
+    });
+
+    continueConversation(trimmed);
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -168,24 +256,43 @@ export function ChatWindow() {
         <div className="border-t border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
           <p className="font-medium">Session complete</p>
           <p className="mt-1 text-green-700">
-            {(session.result_json as Record<string, string>)["final_answer"] ??
-              "The agent has finished working on your goal."}
+            {getFinalAnswerText(
+              (session.result_json as Record<string, unknown>)["final_answer"],
+            )}
           </p>
         </div>
       )}
 
-      {/* Input (always visible, disabled when agent is busy) */}
+      {/* Input */}
       <MessageInput
-        onSend={() => {}}
-        disabled={true}
+        onSend={handleContinue}
+        disabled={!canContinue || isProcessing}
         placeholder={
-          isActive
+          isProcessing
             ? "Agent is working..."
             : session?.status === "awaiting_approval"
               ? "Respond to the approval request above"
-              : "Session ended — start a new one"
+              : canContinue
+                ? "Send a message to continue the conversation..."
+                : "Session ended — start a new one"
         }
       />
+
+      {/* Continue error */}
+      {continueError && (
+        <div className="flex items-center gap-2 bg-red-50 px-4 py-2 text-sm text-red-700">
+          <AlertCircle className="h-4 w-4" />
+          {(continueError as Error).message ?? "Failed to continue session"}
+        </div>
+      )}
+
+      {/* Session refresh error */}
+      {sessionError && (
+        <div className="flex items-center gap-2 bg-red-50 px-4 py-2 text-sm text-red-700">
+          <AlertCircle className="h-4 w-4" />
+          {(sessionError as Error).message ?? "Failed to refresh session"}
+        </div>
+      )}
     </div>
   );
 }

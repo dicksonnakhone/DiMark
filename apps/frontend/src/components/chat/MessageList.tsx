@@ -33,11 +33,19 @@ export function MessageList({
 
       {/* Agent messages */}
       {messages.map((msg) => (
-        <MemoizedAgentMessage
-          key={msg.id}
-          message={msg}
-          sessionId={sessionId}
-        />
+        msg.sender === "user" ? (
+          <div key={msg.id} className="flex justify-end">
+            <div className="max-w-sm rounded-lg bg-blue-600 px-4 py-3 text-sm text-white shadow-sm">
+              {msg.text}
+            </div>
+          </div>
+        ) : (
+          <MemoizedAgentMessage
+            key={msg.id}
+            message={msg}
+            sessionId={sessionId}
+          />
+        )
       ))}
 
       {messages.length === 0 && (
