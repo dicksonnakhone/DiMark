@@ -1,8 +1,13 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Look for .env in the infra directory (two levels up from this file)
+_env_file = Path(__file__).parent.parent.parent.parent / "infra" / ".env"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=str(_env_file), env_file_encoding="utf-8")
 
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432

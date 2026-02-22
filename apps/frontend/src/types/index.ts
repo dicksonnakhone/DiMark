@@ -52,6 +52,10 @@ export interface ApproveDecisionRequest {
   approved: boolean;
 }
 
+export interface ContinueSessionRequest {
+  message: string;
+}
+
 // ---------------------------------------------------------------------------
 // UI-level types for the chat view
 // ---------------------------------------------------------------------------

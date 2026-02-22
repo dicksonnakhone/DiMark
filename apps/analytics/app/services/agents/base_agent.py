@@ -142,6 +142,26 @@ class BaseAgent:
 
         return await self._loop(session=session, db=db, messages=messages)
 
+    async def continue_session(
+        self,
+        *,
+        session: AgentSession,
+        db: AsyncSession,
+        user_message: str,
+    ) -> AgentSession:
+        """Continue an existing session with a new user message."""
+        # Retrieve conversation history
+        messages: list[dict[str, Any]] = session.context_json.get("_messages", [])
+
+        # Append new user message
+        messages.append({"role": "user", "content": user_message})
+
+        # Update status and continue
+        session.status = "running"
+        await db.flush()
+
+        return await self._loop(session=session, db=db, messages=messages)
+
     # ------------------------------------------------------------------
     # Internal loop
     # ------------------------------------------------------------------
@@ -202,6 +222,11 @@ class BaseAgent:
             if not tool_calls:
                 session.status = "completed"
                 session.result_json = {"final_answer": reasoning}
+                # Save conversation history for debugging/continuation
+                session.context_json = {
+                    **{k: v for k, v in session.context_json.items() if not k.startswith("_")},
+                    "_messages": messages,
+                }
                 await db.flush()
                 return session
 
@@ -287,6 +312,11 @@ class BaseAgent:
         # Max steps reached
         session.status = "completed"
         session.result_json = {"final_answer": reasoning, "note": "max_steps_reached"}
+        # Save conversation history for debugging/continuation
+        session.context_json = {
+            **{k: v for k, v in session.context_json.items() if not k.startswith("_")},
+            "_messages": messages,
+        }
         await db.flush()
         return session
 

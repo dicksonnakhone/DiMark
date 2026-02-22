@@ -41,10 +41,15 @@ class AgentSessionOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     decisions: list[AgentDecisionOut] = []
+    context_json: dict[str, Any] = {}  # Contains _messages for debugging
 
 
 class ApproveDecisionRequest(BaseModel):
     approved: bool
+
+
+class ContinueSessionRequest(BaseModel):
+    message: str
 
 
 class ToolOut(BaseModel):

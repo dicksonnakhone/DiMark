@@ -393,6 +393,8 @@ class MetaAdsAdapter(AdPlatformAdapter):
             Campaign.Field.objective: meta_objective,
             Campaign.Field.status: Campaign.Status.paused,
             Campaign.Field.special_ad_categories: [],
+            # Meta requires this field when not using campaign budget optimisation
+            "is_adset_budget_sharing_enabled": False,
         }
         if plan.metadata.get("special_ad_categories"):
             campaign_params[Campaign.Field.special_ad_categories] = plan.metadata[

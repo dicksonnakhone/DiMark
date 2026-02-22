@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.agent_schemas import (
     AgentSessionOut,
     ApproveDecisionRequest,
+    ContinueSessionRequest,
     StartSessionRequest,
     ToolOut,
 )
@@ -89,6 +90,32 @@ async def approve_decision(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    result = await db.execute(
+        select(AgentSession)
+        .where(AgentSession.id == session.id)
+        .options(selectinload(AgentSession.decisions))
+    )
+    session = result.scalars().first()
+    return session
+
+
+@agent_router.post("/sessions/{session_id}/continue", response_model=AgentSessionOut)
+async def continue_session(
+    session_id: uuid.UUID,
+    payload: ContinueSessionRequest,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Continue an existing session with a new user message."""
+    orchestrator = _get_orchestrator()
+    try:
+        session = await orchestrator.continue_session(
+            session_id=session_id,
+            message=payload.message,
+            db=db,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     result = await db.execute(
         select(AgentSession)
