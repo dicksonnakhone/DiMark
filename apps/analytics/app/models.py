@@ -43,6 +43,10 @@ class Campaign(Base):
     )
     experiments: Mapped[list["Experiment"]] = relationship(back_populates="campaign")
     executions: Mapped[list["Execution"]] = relationship(back_populates="campaign")
+    optimization_proposals: Mapped[list["OptimizationProposal"]] = relationship(
+        back_populates="campaign"
+    )
+    monitor_runs: Mapped[list["MonitorRun"]] = relationship(back_populates="campaign")
 
 
 class ChannelSnapshot(Base):
@@ -458,3 +462,227 @@ class PlatformConnector(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+# ---------------------------------------------------------------------------
+# Optimization / Performance Monitoring models
+# ---------------------------------------------------------------------------
+
+
+class RawMetric(Base):
+    """Immutable raw metric record collected from snapshots or platform APIs."""
+
+    __tablename__ = "raw_metrics"
+    __table_args__ = (
+        Index("ix_raw_metrics_campaign_ts", "campaign_id", "collected_at"),
+        Index("ix_raw_metrics_campaign_channel_metric", "campaign_id", "channel", "metric_name"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    channel: Mapped[str] = mapped_column(Text, nullable=False)
+    metric_name: Mapped[str] = mapped_column(Text, nullable=False)
+    metric_value: Mapped[float] = mapped_column(Numeric, nullable=False)
+    metric_unit: Mapped[str] = mapped_column(Text, nullable=False, default="count")
+    source: Mapped[str] = mapped_column(Text, nullable=False, default="snapshot")
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    window_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    window_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DerivedKPI(Base):
+    """Computed KPI derived deterministically from raw metrics."""
+
+    __tablename__ = "derived_kpis"
+    __table_args__ = (
+        Index("ix_derived_kpis_campaign_ts", "campaign_id", "computed_at"),
+        Index("ix_derived_kpis_campaign_channel_kpi", "campaign_id", "channel", "kpi_name"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    channel: Mapped[str | None] = mapped_column(Text, nullable=True)
+    kpi_name: Mapped[str] = mapped_column(Text, nullable=False)
+    kpi_value: Mapped[float] = mapped_column(Numeric, nullable=False)
+    window_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    window_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    input_metrics_json: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=False, default=dict
+    )
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TrendIndicator(Base):
+    """Trend analysis — direction and magnitude of KPI changes over a period."""
+
+    __tablename__ = "trend_indicators"
+    __table_args__ = (
+        Index("ix_trend_indicators_campaign_kpi", "campaign_id", "kpi_name"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    channel: Mapped[str | None] = mapped_column(Text, nullable=True)
+    kpi_name: Mapped[str] = mapped_column(Text, nullable=False)
+    direction: Mapped[str] = mapped_column(Text, nullable=False)
+    magnitude: Mapped[float] = mapped_column(Numeric, nullable=False)
+    period_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    current_value: Mapped[float] = mapped_column(Numeric, nullable=False)
+    previous_value: Mapped[float] = mapped_column(Numeric, nullable=False)
+    confidence: Mapped[float] = mapped_column(Numeric, nullable=False, default=0.0)
+    analysis_json: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=False, default=dict
+    )
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class OptimizationMethod(Base):
+    """Registered optimization method with configuration and performance stats."""
+
+    __tablename__ = "optimization_methods"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    method_type: Mapped[str] = mapped_column(Text, nullable=False)
+    trigger_conditions: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=False, default=dict
+    )
+    config_json: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=False, default=dict
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    cooldown_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    stats_json: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    proposals: Mapped[list["OptimizationProposal"]] = relationship(back_populates="method")
+
+
+class OptimizationProposal(Base):
+    """A proposed optimization action produced by the decision engine."""
+
+    __tablename__ = "optimization_proposals"
+    __table_args__ = (
+        Index("ix_optimization_proposals_campaign_status", "campaign_id", "status"),
+        Index("ix_optimization_proposals_method", "method_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    method_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("optimization_methods.id"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    confidence: Mapped[float] = mapped_column(Numeric, nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    action_type: Mapped[str] = mapped_column(Text, nullable=False)
+    action_payload: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=False
+    )
+    reasoning: Mapped[str] = mapped_column(Text, nullable=False)
+    trigger_data_json: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=False, default=dict
+    )
+    guardrail_checks_json: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=False, default=dict
+    )
+    execution_result_json: Mapped[dict | None] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=True
+    )
+    approved_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    campaign: Mapped["Campaign"] = relationship(back_populates="optimization_proposals")
+    method: Mapped["OptimizationMethod"] = relationship(back_populates="proposals")
+
+
+# ---------------------------------------------------------------------------
+# Optimization learning & monitoring models
+# ---------------------------------------------------------------------------
+
+
+class OptimizationLearning(Base):
+    """Post-execution verification and learning record."""
+
+    __tablename__ = "optimization_learnings"
+    __table_args__ = (
+        Index("ix_optimization_learnings_campaign", "campaign_id", "verified_at"),
+        Index("ix_optimization_learnings_proposal", "proposal_id"),
+        Index("ix_optimization_learnings_method", "method_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    proposal_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("optimization_proposals.id", ondelete="CASCADE"), nullable=False
+    )
+    method_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("optimization_methods.id"), nullable=False
+    )
+    predicted_impact: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=False
+    )
+    actual_impact: Mapped[dict | None] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=True
+    )
+    accuracy_score: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    verification_status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    details_json: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    campaign: Mapped["Campaign"] = relationship()
+    proposal: Mapped["OptimizationProposal"] = relationship()
+    method: Mapped["OptimizationMethod"] = relationship()
+
+
+class MonitorRun(Base):
+    """Record of a full monitor cycle execution."""
+
+    __tablename__ = "monitor_runs"
+    __table_args__ = (
+        Index("ix_monitor_runs_campaign_status", "campaign_id", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="completed")
+    engine_summary_json: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=False, default=dict
+    )
+    execution_summary_json: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=False, default=dict
+    )
+    verification_summary_json: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    campaign: Mapped["Campaign"] = relationship(back_populates="monitor_runs")
