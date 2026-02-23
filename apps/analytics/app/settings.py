@@ -26,5 +26,13 @@ class Settings(BaseSettings):
     META_AD_ACCOUNT_ID: str = ""  # format: "act_123456789"
     META_PAGE_ID: str = ""  # Facebook Page ID for ad creative creation
 
+    # Optimization engine
+    OPTIMIZATION_AUTO_APPROVE_THRESHOLD: float = 0.85
+    OPTIMIZATION_MAX_PROPOSALS_PER_HOUR: int = 3
+    OPTIMIZATION_MAX_BUDGET_CHANGE_PCT: float = 0.20
+    OPTIMIZATION_MIN_CHANNEL_FLOOR_PCT: float = 0.05
+    OPTIMIZATION_DEFAULT_COOLDOWN_MINUTES: int = 60
+    OPTIMIZATION_VERIFICATION_DELAY_HOURS: int = 24
+
 
 settings = Settings()
